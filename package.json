@@ -1,0 +1,22 @@
+{
+  "name": "malleable",
+  "version": "1.0.0",
+  "type": "module",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "dev": "electron ."
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": "Malleable - A canvas for AI-generated UI",
+  "devDependencies": {
+    "electron": "^35.0.0"
+  },
+  "dependencies": {
+    "@mariozechner/pi-agent-core": "^0.52.8",
+    "@mariozechner/pi-ai": "^0.52.8",
+    "@mariozechner/pi-coding-agent": "^0.52.8"
+  }
+}
