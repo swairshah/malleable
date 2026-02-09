@@ -1,5 +1,7 @@
-import { app, BrowserWindow, ipcMain } from "electron";
+import { app, BrowserWindow, ipcMain, dialog } from "electron";
 import path from "path";
+import fs from "fs";
+import os from "os";
 import { fileURLToPath } from "url";
 import { Agent } from "@mariozechner/pi-agent-core";
 import { getModel } from "@mariozechner/pi-ai";
@@ -11,6 +13,9 @@ const __dirname = path.dirname(__filename);
 
 let mainWindow;
 let agent;
+
+const DEFAULT_CWD = path.join(os.homedir(), ".malleable");
+let agentCwd = DEFAULT_CWD;
 
 function createRenderTool() {
   const renderSchema = Type.Object({
@@ -36,16 +41,18 @@ function createRenderTool() {
   };
 }
 
-function createAgent() {
+function createAgent(cwd) {
+  if (cwd) agentCwd = cwd;
+  fs.mkdirSync(agentCwd, { recursive: true });
+
   const model = getModel("anthropic", "claude-sonnet-4-5-20250929");
-  const cwd = process.cwd();
-  const tools = [...createCodingTools(cwd), createRenderTool()];
+  const tools = [...createCodingTools(agentCwd), createRenderTool()];
 
   agent = new Agent({
     initialState: {
       systemPrompt: `You are a helpful coding assistant that builds UI components and renders them on a canvas.
 
-Your working directory is: ${cwd}
+Your working directory is: ${agentCwd}
 
 You have filesystem tools: read, write, edit, bash, grep, find, ls.
 You also have a "render" tool that displays HTML in the canvas panel to the right of this chat.
@@ -137,13 +144,25 @@ function createWindow() {
 }
 
 // IPC: send a chat message to the agent
-ipcMain.handle("chat:send", async (_event, text) => {
+ipcMain.handle("chat:send", async (_event, { text, images }) => {
   if (!agent) {
     return { error: "Agent not initialized" };
   }
 
+  // Build images array for the agent SDK
+  const agentImages = (images || []).map((img) => ({
+    type: "image",
+    data: img.data,
+    mimeType: img.mimeType,
+  }));
+
+  // If already streaming, steer the agent mid-run instead of blocking
   if (agent.state.isStreaming) {
-    return { error: "Agent is already processing" };
+    const content = [];
+    if (text) content.push({ type: "text", text });
+    agentImages.forEach((img) => content.push(img));
+    agent.steer({ role: "user", content, timestamp: Date.now() });
+    return { ok: true, steered: true };
   }
 
   // Subscribe for streaming events
@@ -170,7 +189,7 @@ ipcMain.handle("chat:send", async (_event, text) => {
   });
 
   try {
-    await agent.prompt(text);
+    await agent.prompt(text, agentImages.length > 0 ? agentImages : undefined);
 
     // Extract final text from the last assistant message
     const messages = agent.state.messages;
@@ -211,6 +230,24 @@ ipcMain.handle("chat:clear", async () => {
     agent.replaceMessages([]);
   }
   return { ok: true };
+});
+
+// IPC: get current working directory
+ipcMain.handle("chat:get-cwd", () => agentCwd);
+
+// IPC: open directory picker and change cwd
+ipcMain.handle("chat:pick-cwd", async () => {
+  const result = await dialog.showOpenDialog(mainWindow, {
+    properties: ["openDirectory"],
+    defaultPath: agentCwd,
+  });
+  if (result.canceled || result.filePaths.length === 0) {
+    return { canceled: true, cwd: agentCwd };
+  }
+  const newCwd = result.filePaths[0];
+  if (agent) agent.abort();
+  createAgent(newCwd);
+  return { canceled: false, cwd: newCwd };
 });
 
 app.whenReady().then(() => {

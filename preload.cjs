@@ -4,9 +4,11 @@ contextBridge.exposeInMainWorld("malleable", {
   platform: process.platform,
 
   // Chat API
-  sendMessage: (text) => ipcRenderer.invoke("chat:send", text),
+  sendMessage: (text, images) => ipcRenderer.invoke("chat:send", { text, images }),
   abort: () => ipcRenderer.invoke("chat:abort"),
   clearChat: () => ipcRenderer.invoke("chat:clear"),
+  getCwd: () => ipcRenderer.invoke("chat:get-cwd"),
+  pickCwd: () => ipcRenderer.invoke("chat:pick-cwd"),
 
   // Streaming events from main process
   onDelta: (callback) => {
